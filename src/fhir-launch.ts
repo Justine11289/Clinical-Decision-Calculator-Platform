@@ -8,7 +8,9 @@ async function performLaunch(): Promise<void> {
         const client_id = urlParams.get('client_id') || config?.clientId;
 
         if (!client_id) {
-            throw new Error('Launch Failed: No Client ID provided. Please configure it in URL parameters or MEDCALC_CONFIG.');
+            throw new Error(
+                'Launch Failed: No Client ID provided. Please configure it in URL parameters or MEDCALC_CONFIG.'
+            );
         }
 
         const absoluteRedirectUri = new URL(
@@ -30,14 +32,16 @@ async function performLaunch(): Promise<void> {
                 config?.fhirServiceUrl || 'https://launch.smarthealthit.org/v/r4/fhir';
         }
 
-        console.log('[SMART-LAUNCH] Public + PKCE federation authorization redirecting with config:', {
-            client_id: authorizeOptions.client_id,
-            redirect_uri: authorizeOptions.redirect_uri,
-            scope: authorizeOptions.scope
-        });
+        console.log(
+            '[SMART-LAUNCH] Public + PKCE federation authorization redirecting with config:',
+            {
+                client_id: authorizeOptions.client_id,
+                redirect_uri: authorizeOptions.redirect_uri,
+                scope: authorizeOptions.scope
+            }
+        );
 
         await FHIR.oauth2.authorize(authorizeOptions);
-        
     } catch (error) {
         console.error('SMART Launch Error:', error);
         const statusEl = document.getElementById('status');
@@ -46,7 +50,8 @@ async function performLaunch(): Promise<void> {
             statusEl.style.color = 'red';
             const subStatus = document.getElementById('sub-status');
             if (subStatus) {
-                subStatus.innerText = (error as Error).message || 'Unknown authorization error occurred.';
+                subStatus.innerText =
+                    (error as Error).message || 'Unknown authorization error occurred.';
             }
         }
     }
