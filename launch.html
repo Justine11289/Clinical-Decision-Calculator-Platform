@@ -57,31 +57,47 @@
             if (window.location.search.includes('launch=')) {
                 sessionStorage.clear();
             }
+
             const urlParams = new URLSearchParams(window.location.search);
-            let clientId =
-                urlParams.get('clientId') || localStorage.getItem('TEMP_CLIENT_ID') || '';
 
-            const allowConfidentialClient = true;
+            function autoExtractClientId() {
+                try {
+                    const launchParam = urlParams.get('launch');
+                    if (!launchParam) return '';
 
+                    let base64Str = launchParam.split('.')[1] || launchParam;
+                    base64Str = base64Str.replace(/-/g, '+').replace(/_/g, '/');
+
+                    while (base64Str.length % 4 !== 0) {
+                        base64Str += '=';
+                    }
+
+                    const decodedText = atob(base64Str);
+                    const launchArray = JSON.parse(decodedText);
+
+                    if (Array.isArray(launchArray) && launchArray[9]) {
+                        console.info('[MEDCALC] 成功全自動捕捉動態 Client ID:', launchArray[9]);
+                        return launchArray[9];
+                    }
+                } catch (e) {
+                    console.error('[MEDCALC] 自動抽取 Client ID 失敗:', e);
+                }
+                return '';
+            }
+
+            const dynamicClientId = autoExtractClientId();
             window.MEDCALC_CONFIG = {
                 fhir: {
-                    clientId: clientId,
+                    clientId: dynamicClientId,
                     scope: 'launch launch/patient patient/*.read openid fhirUser online_access',
                     redirectUri: 'index.html'
                 }
             };
 
-            if (!window.MEDCALC_CONFIG.fhir.clientId) {
-                const inputId = prompt(
-                    '偵測到未綁定用戶端！請輸入本次 Keycloak 註冊的 Client ID :'
-                );
-                if (inputId) {
-                    localStorage.setItem('TEMP_CLIENT_ID', inputId.trim());
-                    location.reload();
-                }
-            } else {
-                localStorage.setItem('TEMP_CLIENT_ID', window.MEDCALC_CONFIG.fhir.clientId);
-            }
+            console.info(
+                '[MEDCALC] 啟動準備就緒，本次對齊的金鑰為:',
+                window.MEDCALC_CONFIG.fhir.clientId
+            );
         </script>
 
         <script src="https://cdn.jsdelivr.net/npm/fhirclient@2.6.3/build/fhir-client.js"></script>
