@@ -195,8 +195,6 @@ window.onload = async () => {
 
         const shouldPatch = (url: string, method: string): boolean =>
             /\/auth\/token(?:\?|$)/i.test(url) && method.toUpperCase() === 'POST';
-
-        // 🌟 核心動態校正：直接從發射的 Request Body 中即時撈取真實的 client_id
         function extractBasicAuthHeader(bodyContent: any): string | null {
             try {
                 if (!bodyContent) return null;
@@ -211,8 +209,6 @@ window.onload = async () => {
                     localStorage.getItem('TEMP_CLIENT_SECRET') ||
                     '';
 
-                // 💡 只有當環境中「同時具備真實 Client ID 與 Secret」時，才注入 Basic 標頭（機密用戶端流派）
-                // 如果是 GitHub Pages 的公開用戶端（Secret 為空），則直接回傳 null，優雅放行標準 PKCE
                 if (activeClientId && clientSecret) {
                     return `Basic ${btoa(unescape(encodeURIComponent(`${activeClientId}:${clientSecret}`)))}`;
                 }

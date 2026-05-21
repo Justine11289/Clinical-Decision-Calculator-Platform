@@ -156,36 +156,37 @@ window.onload = async () => {
             lastMethod: '',
             lastInjected: false
         };
-
         const shouldPatch = (url, method) => /\/auth\/token(?:\?|$)/i.test(url) && method.toUpperCase() === 'POST';
         function extractBasicAuthHeader(bodyContent) {
             try {
-                if (!bodyContent) return null;
+                if (!bodyContent)
+                    return null;
                 const bodyStr = typeof bodyContent === 'string' ? bodyContent : String(bodyContent);
                 const bodyParams = new URLSearchParams(bodyStr);
                 const activeClientId = bodyParams.get('client_id');
                 const params = new URLSearchParams(window.location.search);
-                const clientSecret = params.get('clientSecret') || localStorage.getItem('TEMP_CLIENT_SECRET');
-                
+                const clientSecret = params.get('clientSecret') ||
+                    win.MEDCALC_CONFIG?.fhir?.clientSecret ||
+                    localStorage.getItem('TEMP_CLIENT_SECRET') ||
+                    '';
                 if (activeClientId && clientSecret) {
                     return `Basic ${btoa(unescape(encodeURIComponent(`${activeClientId}:${clientSecret}`)))}`;
                 }
-            } catch (e) {
+            }
+            catch (e) {
                 console.warn('[MEDCALC][AUTH] 解析 Request Body 失敗:', e);
             }
-            return null; 
+            return null;
         }
-
         const originalFetch = window.fetch.bind(window);
         window.fetch = async (input, init) => {
             const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-            const method = (init?.method || (typeof input !== 'string' && !(input instanceof URL) ? input.method : 'GET')).toUpperCase();
-            
+            const method = (init?.method ||
+                (typeof input !== 'string' && !(input instanceof URL) ? input.method : 'GET')).toUpperCase();
             if (shouldPatch(url, method)) {
                 win.__MEDCALC_AUTH_DEBUG.matchedCount += 1;
                 win.__MEDCALC_AUTH_DEBUG.lastUrl = url;
                 win.__MEDCALC_AUTH_DEBUG.lastMethod = method;
-                
                 const headers = new Headers(init?.headers);
                 if (!headers.has('Authorization')) {
                     const basic = extractBasicAuthHeader(init?.body);
@@ -194,22 +195,23 @@ window.onload = async () => {
                     }
                 }
                 win.__MEDCALC_AUTH_DEBUG.lastInjected = headers.has('Authorization');
-                console.info('[MEDCALC][AUTH] Fetch Token 動態校正成功，Authorization 注入狀態:', win.__MEDCALC_AUTH_DEBUG.lastInjected);
+                console.info('[MEDCALC][AUTH] Fetch Token 檢查完成，Authorization 注入狀態:', win.__MEDCALC_AUTH_DEBUG.lastInjected);
                 return originalFetch(input, { ...init, headers });
             }
             return originalFetch(input, init);
         };
-
         const originalOpen = XMLHttpRequest.prototype.open;
         const originalSend = XMLHttpRequest.prototype.send;
         XMLHttpRequest.prototype.open = function (method, url, ...args) {
             this.__medcalcMethod = method;
             this.__medcalcUrl = String(url);
-            return originalOpen.call(this, method, url, ...args);
+            const [asyncFlag, username, password] = args;
+            return originalOpen.call(this, method, url, asyncFlag, username, password);
         };
-        XMLHttpRequest.prototype.send = function (body) {
+        XMLHttpRequest.prototype.send = function (...args) {
             const method = this.__medcalcMethod || 'GET';
             const url = this.__medcalcUrl || '';
+            const [body] = args;
             if (shouldPatch(url, method)) {
                 win.__MEDCALC_AUTH_DEBUG.matchedCount += 1;
                 win.__MEDCALC_AUTH_DEBUG.lastUrl = url;
@@ -219,7 +221,7 @@ window.onload = async () => {
                     try {
                         this.setRequestHeader('Authorization', basic);
                         win.__MEDCALC_AUTH_DEBUG.lastInjected = true;
-                        console.info('[MEDCALC][AUTH] XHR Token 動態校正成功，Authorization 已同步。');
+                        console.info('[MEDCALC][AUTH] XHR Token 檢查完成，Authorization 已同步。');
                     }
                     catch (_e) {
                         win.__MEDCALC_AUTH_DEBUG.lastInjected = false;
@@ -228,16 +230,16 @@ window.onload = async () => {
             }
             return originalSend.call(this, body);
         };
-
         win.__MEDCALC_READY_BASIC_AUTH_PATCHED = true;
         win.__MEDCALC_AUTH_DEBUG.installed = true;
-        console.info('[MEDCALC][AUTH] 彈性安全攔截器已成功部署。');
     }
     async function loadRealFHIRData() {
         patientInfoDiv.innerHTML = '正在連接伺服器並載入病人資料...';
         try {
             installTokenBasicAuthInterceptor();
+            // 等待 SMART 框架就緒
             const client = await window.FHIR.oauth2.ready();
+            // 使用 utils.ts 中的函數顯示資訊
             await displayPatientInfo(client, patientInfoDiv);
         }
         catch (error) {
@@ -266,6 +268,7 @@ window.onload = async () => {
     initializeFilters();
     initializeSort();
     installUsageTracking();
+    // 先顯示清單，避免 FHIR ready 等待期間整個側邊控制看起來失效。
     updateDisplay();
     searchBar.oninput = updateDisplay;
     await loadRealFHIRData();
