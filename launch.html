@@ -58,30 +58,26 @@
             let clientId =
                 urlParams.get('clientId') ||
                 localStorage.getItem('TEMP_CLIENT_ID') ||
-                'cc344727-6f90-496c-94fd-c7829aa9a51d';
+                ''; 
 
             const allowConfidentialClient = true;
-            // let clientSecret =
-            //     urlParams.get('clientSecret') ||
-            //     localStorage.getItem('TEMP_CLIENT_SECRET');
 
-            // localStorage.setItem('TEMP_CLIENT_SECRET', clientSecret);
             window.MEDCALC_CONFIG = {
                 fhir: {
                     clientId: clientId,
-                    // clientSecret: clientSecret,
-                    // allowConfidentialClient: allowConfidentialClient,
                     scope: 'launch launch/patient patient/*.read openid fhirUser online_access',
                     redirectUri: 'index.html'
                 }
             };
 
             if (!window.MEDCALC_CONFIG.fhir.clientId) {
-                const inputId = prompt('Input Client ID : ');
+                const inputId = prompt('偵測到未綁定用戶端！請輸入本次 Keycloak 註冊的 Client ID :');
                 if (inputId) {
-                    localStorage.setItem('TEMP_CLIENT_ID', inputId);
+                    localStorage.setItem('TEMP_CLIENT_ID', inputId.trim());
                     location.reload();
                 }
+            } else {
+                localStorage.setItem('TEMP_CLIENT_ID', window.MEDCALC_CONFIG.fhir.clientId);
             }
         </script>
 
