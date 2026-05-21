@@ -193,26 +193,34 @@ window.onload = async () => {
             lastInjected: false
         };
 
-        const params = new URLSearchParams(window.location.search);
-        const clientId =
-            params.get('clientId') ||
-            win.MEDCALC_CONFIG?.fhir?.clientId ||
-            localStorage.getItem('TEMP_CLIENT_ID') ||
-            'cc344727-6f90-496c-94fd-c7829aa9a51d';
-        const clientSecret =
-            params.get('clientSecret') ||
-            win.MEDCALC_CONFIG?.fhir?.clientSecret ||
-            localStorage.getItem('TEMP_CLIENT_SECRET') ||
-            '79f04b56b33491716c0880af72cdef7d3f0629111421cedd18353651cd313d9e';
-
-        localStorage.setItem('TEMP_CLIENT_ID', clientId);
-        localStorage.setItem('TEMP_CLIENT_SECRET', clientSecret);
-
-        if (!clientId || !clientSecret) return;
-
-        const basic = `Basic ${btoa(unescape(encodeURIComponent(`${clientId}:${clientSecret}`)))}`;
         const shouldPatch = (url: string, method: string): boolean =>
             /\/auth\/token(?:\?|$)/i.test(url) && method.toUpperCase() === 'POST';
+
+        // 🌟 核心動態校正：直接從發射的 Request Body 中即時撈取真實的 client_id
+        function extractBasicAuthHeader(bodyContent: any): string | null {
+            try {
+                if (!bodyContent) return null;
+                const bodyStr = typeof bodyContent === 'string' ? bodyContent : String(bodyContent);
+                const bodyParams = new URLSearchParams(bodyStr);
+                const activeClientId = bodyParams.get('client_id');
+
+                const params = new URLSearchParams(window.location.search);
+                const clientSecret =
+                    params.get('clientSecret') ||
+                    win.MEDCALC_CONFIG?.fhir?.clientSecret ||
+                    localStorage.getItem('TEMP_CLIENT_SECRET') ||
+                    '';
+
+                // 💡 只有當環境中「同時具備真實 Client ID 與 Secret」時，才注入 Basic 標頭（機密用戶端流派）
+                // 如果是 GitHub Pages 的公開用戶端（Secret 為空），則直接回傳 null，優雅放行標準 PKCE
+                if (activeClientId && clientSecret) {
+                    return `Basic ${btoa(unescape(encodeURIComponent(`${activeClientId}:${clientSecret}`)))}`;
+                }
+            } catch (e) {
+                console.warn('[MEDCALC][AUTH] 解析 Request Body 失敗:', e);
+            }
+            return null;
+        }
 
         const originalFetch = window.fetch.bind(window);
         window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -227,17 +235,20 @@ window.onload = async () => {
                 win.__MEDCALC_AUTH_DEBUG.matchedCount += 1;
                 win.__MEDCALC_AUTH_DEBUG.lastUrl = url;
                 win.__MEDCALC_AUTH_DEBUG.lastMethod = method;
+
                 const headers = new Headers(init?.headers);
                 if (!headers.has('Authorization')) {
-                    headers.set('Authorization', basic);
+                    const basic = extractBasicAuthHeader(init?.body);
+                    if (basic) {
+                        headers.set('Authorization', basic);
+                    }
                 }
                 win.__MEDCALC_AUTH_DEBUG.lastInjected = headers.has('Authorization');
                 console.info(
-                    '[MEDCALC][AUTH] ready/fetch token match, Authorization set:',
+                    '[MEDCALC][AUTH] Fetch Token 檢查完成，Authorization 注入狀態:',
                     win.__MEDCALC_AUTH_DEBUG.lastInjected
                 );
-                const nextInit: RequestInit = { ...init, headers };
-                return originalFetch(input, nextInit);
+                return originalFetch(input, { ...init, headers });
             }
 
             return originalFetch(input, init);
@@ -256,35 +267,35 @@ window.onload = async () => {
             const [asyncFlag, username, password] = args;
             return originalOpen.call(this, method, url, asyncFlag, username, password);
         };
+
         XMLHttpRequest.prototype.send = function (
             this: XMLHttpRequest & { __medcalcMethod?: string; __medcalcUrl?: string },
             ...args: any[]
         ): any {
             const method = this.__medcalcMethod || 'GET';
             const url = this.__medcalcUrl || '';
+            const [body] = args;
+
             if (shouldPatch(url, method)) {
                 win.__MEDCALC_AUTH_DEBUG.matchedCount += 1;
                 win.__MEDCALC_AUTH_DEBUG.lastUrl = url;
                 win.__MEDCALC_AUTH_DEBUG.lastMethod = method;
-                try {
-                    this.setRequestHeader('Authorization', basic);
-                    win.__MEDCALC_AUTH_DEBUG.lastInjected = true;
-                    console.info('[MEDCALC][AUTH] ready/xhr token match, Authorization set: true');
-                } catch (_e) {
-                    // Ignore and continue request.
-                    win.__MEDCALC_AUTH_DEBUG.lastInjected = false;
-                    console.warn(
-                        '[MEDCALC][AUTH] ready/xhr token match, failed to set Authorization'
-                    );
+                const basic = extractBasicAuthHeader(body);
+                if (basic) {
+                    try {
+                        this.setRequestHeader('Authorization', basic);
+                        win.__MEDCALC_AUTH_DEBUG.lastInjected = true;
+                        console.info('[MEDCALC][AUTH] XHR Token 檢查完成，Authorization 已同步。');
+                    } catch (_e) {
+                        win.__MEDCALC_AUTH_DEBUG.lastInjected = false;
+                    }
                 }
             }
-            const [body] = args;
             return originalSend.call(this, body);
         };
 
         win.__MEDCALC_READY_BASIC_AUTH_PATCHED = true;
         win.__MEDCALC_AUTH_DEBUG.installed = true;
-        console.info('[MEDCALC][AUTH] ready interceptor installed');
     }
 
     async function loadRealFHIRData() {
